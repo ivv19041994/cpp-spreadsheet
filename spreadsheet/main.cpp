@@ -1,6 +1,9 @@
+#include <limits>
 #include "common.h"
 #include "formula.h"
 #include "test_runner_p.h"
+
+#include "sheet.h"
 
 inline std::ostream& operator<<(std::ostream& output, Position pos) {
     return output << "(" << pos.row << ", " << pos.col << ")";
@@ -14,19 +17,9 @@ inline std::ostream& operator<<(std::ostream& output, Size size) {
     return output << "(" << size.rows << ", " << size.cols << ")";
 }
 
-inline std::ostream& operator<<(std::ostream& output, const CellInterface::Value& value) {
-    std::visit(
-        [&](const auto& x) {
-            output << x;
-        },
-        value);
-    return output;
-}
+
 
 namespace {
-std::string ToString(FormulaError::Category category) {
-    return std::string(FormulaError(category).ToString());
-}
 
 void TestPositionAndStringConversion() {
     auto testSingle = [](Position pos, std::string_view str) {
@@ -250,7 +243,7 @@ void TestErrorDiv0() {
 void TestEmptyCellTreatedAsZero() {
     auto sheet = CreateSheet();
     sheet->SetCell("A1"_pos, "=B2");
-    ASSERT_EQUAL(sheet->GetCell("A1"_pos)->GetValue(), CellInterface::Value(0));
+    ASSERT_EQUAL(sheet->GetCell("A1"_pos)->GetValue(), CellInterface::Value(0.0));
 }
 
 void TestFormulaInvalidPosition() {
@@ -289,7 +282,10 @@ void TestPrint() {
     ASSERT_EQUAL(values.str(), "\t\nmeow\t35\n");
 }
 
+
+
 void TestCellReferences() {
+    Sheet sheet2;
     auto sheet = CreateSheet();
     sheet->SetCell("A1"_pos, "1");
     sheet->SetCell("A2"_pos, "=A1");
@@ -315,6 +311,7 @@ void TestCellReferences() {
 
 void TestFormulaIncorrect() {
     auto isIncorrect = [](std::string expression) {
+		//std::cout << "isIncorrect " << expression << std::endl;
         try {
             ParseFormula(std::move(expression));
         } catch (const FormulaException&) {
@@ -347,6 +344,28 @@ void TestCellCircularReferences() {
     ASSERT(caught);
     ASSERT_EQUAL(sheet->GetCell("M6"_pos)->GetText(), "Ready");
 }
+
+void TestCellReferences2() {
+	auto sheet = CreateSheet();
+	
+	sheet->SetCell("E2"_pos, "=E4*E5");
+	sheet->SetCell("E4"_pos, "=A6");
+	sheet->SetCell("E5"_pos, "2");
+	sheet->SetCell("A6"_pos, "10");
+	
+	ASSERT_EQUAL(std::get<double>(sheet->GetCell("E2"_pos)->GetValue()), 20.0);
+	
+	//std::cout << "SetCell A6 = 30" << std::endl;	
+	sheet->SetCell("A6"_pos, "30");
+	//std::cout << "end SetCell A6 = 30" << std::endl;
+	ASSERT_EQUAL(std::get<double>(sheet->GetCell("E2"_pos)->GetValue()), 60.0);
+	sheet->SetCell("E5"_pos, "10");
+	ASSERT_EQUAL(std::get<double>(sheet->GetCell("E2"_pos)->GetValue()), 300.0);
+	sheet->SetCell("A6"_pos, "");
+	ASSERT_EQUAL(std::get<double>(sheet->GetCell("E2"_pos)->GetValue()), 0.0);
+}
+
+
 }  // namespace
 
 int main() {
@@ -370,4 +389,8 @@ int main() {
     RUN_TEST(tr, TestCellReferences);
     RUN_TEST(tr, TestFormulaIncorrect);
     RUN_TEST(tr, TestCellCircularReferences);
+	RUN_TEST(tr, TestCellReferences2);
+	
+	std::cerr << "End tests" << std::endl;
+    return 0;
 }

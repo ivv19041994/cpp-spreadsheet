@@ -9,6 +9,8 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <variant>
+#include <cmath>
 
 namespace ASTImpl {
 
@@ -72,7 +74,7 @@ public:
     virtual ~Expr() = default;
     virtual void Print(std::ostream& out) const = 0;
     virtual void DoPrintFormula(std::ostream& out, ExprPrecedence precedence) const = 0;
-    virtual double Evaluate(/*добавьте сюда нужные аргументы*/ args) const = 0;
+    virtual double Evaluate(const SheetInterface& sheet_interface) const = 0;
 
     // higher is tighter
     virtual ExprPrecedence GetPrecedence() const = 0;
@@ -142,8 +144,32 @@ public:
         }
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/) const override {
-			// Скопируйте ваше решение из предыдущих уроков.
+    double Evaluate(const SheetInterface& sheet_interface) const override {
+		double result = 0.0;
+		
+        switch (type_) {
+        case Add: 
+			result = lhs_->Evaluate(sheet_interface) + rhs_->Evaluate(sheet_interface);
+			break;
+        case Subtract: 
+			result = lhs_->Evaluate(sheet_interface) - rhs_->Evaluate(sheet_interface);
+			break;
+        case Multiply: 
+			result = lhs_->Evaluate(sheet_interface) * rhs_->Evaluate(sheet_interface);
+			break;
+        case Divide: {
+            auto div = rhs_->Evaluate(sheet_interface);
+            if (div == 0.0) {
+                throw FormulaError(FormulaError::Category::Div0);
+            }
+            result = lhs_->Evaluate(sheet_interface) / div;
+
+        }
+        }
+		if(std::isinf(result)) {
+			throw FormulaError(FormulaError::Category::Div0);
+		}
+		return result;
     }
 
 private:
@@ -180,8 +206,12 @@ public:
         return EP_UNARY;
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/ args) const override {
-        // Скопируйте ваше решение из предыдущих уроков.
+    double Evaluate(const SheetInterface& sheet_interface) const override {
+        switch (type_) {
+        case UnaryPlus: return operand_->Evaluate(sheet_interface);
+        case UnaryMinus: return -operand_->Evaluate(sheet_interface);
+        }
+        return 0.0;
     }
 
 private:
@@ -197,7 +227,7 @@ public:
 
     void Print(std::ostream& out) const override {
         if (!cell_->IsValid()) {
-            out << FormulaError::Category::Ref;
+            out << FormulaError(FormulaError::Category::Ref);
         } else {
             out << cell_->ToString();
         }
@@ -211,8 +241,32 @@ public:
         return EP_ATOM;
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/ args) const override {
-        // реализуйте метод.
+    double Evaluate(const SheetInterface& sheet_interface) const override {
+
+        if (cell_ == nullptr || 
+            cell_->row >= cell_->MAX_ROWS || 
+            cell_->col >= cell_->MAX_COLS) {
+            throw FormulaError(FormulaError::Category::Ref);
+        }
+
+        const CellInterface* cell = sheet_interface.GetCell(*cell_);
+        if (!cell) {
+            return 0;
+        }
+		
+		CellInterface::Value value = cell->GetValue();
+		
+		if (std::string* str = std::get_if<std::string>(&value)) {
+			if(str->size() == 0) {
+				return 0;
+			}
+			throw FormulaError(FormulaError::Category::Value);
+		}
+		if (double* d = std::get_if<double>(&value)) {
+			return *d;
+		}
+		FormulaError* e = std::get_if<FormulaError>(&value);
+		throw *e;
     }
 
 private:
@@ -237,7 +291,7 @@ public:
         return EP_ATOM;
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/ args) const override {
+    double Evaluate(const SheetInterface&) const override {
         return value_;
     }
 
@@ -391,8 +445,8 @@ void FormulaAST::PrintFormula(std::ostream& out) const {
     root_expr_->PrintFormula(out, ASTImpl::EP_ATOM);
 }
 
-double FormulaAST::Execute(/*добавьте нужные аргументы*/ args) const {
-    return root_expr_->Evaluate(/*добавьте нужные аргументы*/ args);
+double FormulaAST::Execute(const SheetInterface& sheet_interface) const {
+    return root_expr_->Evaluate(sheet_interface);
 }
 
 FormulaAST::FormulaAST(std::unique_ptr<ASTImpl::Expr> root_expr, std::forward_list<Position> cells)

@@ -7,6 +7,7 @@
 #include <string_view>
 #include <variant>
 #include <vector>
+#include <iostream>
 
 // Позиция ячейки. Индексация с нуля.
 struct Position {
@@ -25,6 +26,16 @@ struct Position {
     static const int MAX_COLS = 16384;
     static const Position NONE;
 };
+
+namespace std {
+template <>
+struct hash<Position>
+{
+	std::size_t operator()(const Position& k) const {
+		return static_cast<std::size_t>(k.row) << 32 | static_cast<std::size_t>(k.col);
+	}
+};
+}
 
 struct Size {
     int rows = 0;
@@ -147,3 +158,12 @@ public:
 
 // Создаёт готовую к работе пустую таблицу.
 std::unique_ptr<SheetInterface> CreateSheet();
+
+inline std::ostream& operator<<(std::ostream& output, const CellInterface::Value& value) {
+    std::visit(
+        [&](const auto& x) {
+            output << x;
+        },
+        value);
+    return output;
+}
