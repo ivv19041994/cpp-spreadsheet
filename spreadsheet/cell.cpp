@@ -36,7 +36,7 @@ class Cell::TextImpl : public Cell::Impl {
         
     }
     Value GetValue(const SheetInterface& ) const override {
-        return text_[0] == '\'' ? text_.substr(1) : text_;
+        return text_[0] == ESCAPE_SIGN ? text_.substr(1) : text_;
     }
     
     std::string GetText() const {
@@ -190,20 +190,19 @@ void Cell::Set(std::string text, Position position) {
 			double result = std::stod(text, &pos);
 			if (pos == text.size()) {
 				impl_ = std::make_unique<NumberImpl>(std::move(text), result);
+				RemoveThisDepends(position);
 				return;
 			}
 		} catch(const std::invalid_argument&) {}
 		
-        impl_ = std::make_unique<TextImpl>(std::move(text));
-        return;
-    }
-    Clear(position);
+	}
+	impl_ = std::make_unique<TextImpl>(std::move(text));
+	RemoveThisDepends(position);
+	return;
 }
 
 void Cell::Clear(Position position) {
-	ResetCash();
-    impl_ = std::make_unique<EmptyImpl>();
-	RemoveThisDepends(position);
+	Set("", position);
 }
 
 Cell::Value Cell::GetValue() const {
